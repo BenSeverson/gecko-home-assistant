@@ -11,6 +11,6 @@
     "@gazoodle"
   ],
   "requirements": [
-    "geckolib @ git+https://github.com/BenSeverson/geckolib@spapackv39"
+    "git+https://github.com/BenSeverson/geckolib@spapackv39#geckolib"
   ]
 }
