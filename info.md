@@ -39,9 +39,9 @@ Platform | Description
 
 ***
 
-[gecko-ha]: https://github.com/gazoodle/gecko-home-assistant
-[commits-shield]: https://img.shields.io/github/commit-activity/y/gazoodle/gecko-home-assistant.svg?style=for-the-badge
-[commits]: https://github.com/gazoodle/gecko-home-assistant/commits/master
+[gecko-ha]: https://github.com/BenSeverson/gecko-home-assistant
+[commits-shield]: https://img.shields.io/github/commit-activity/y/BenSeverson/gecko-home-assistant.svg?style=for-the-badge
+[commits]: https://github.com/BenSeverson/gecko-home-assistant/commits/master
 [hacs]: https://github.com/custom-components/hacs
 [hacsbadge]: https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge
 [screenshotimg]: https://github.com/gazoodle/gecko-home-assistant/blob/main/screenshot.png
@@ -49,5 +49,5 @@ Platform | Description
 [forum]: https://community.home-assistant.io/
 [license-shield]: https://img.shields.io/github/license/gazoodle/gecko-home-assistant.svg?style=for-the-badge
 [maintenance-shield]: https://img.shields.io/badge/maintainer-gazoodle%40hash.fyi-blue.svg?style=for-the-badge
-[releases-shield]: https://img.shields.io/github/release/gazoodle/gecko-home-assistant.svg?style=for-the-badge
-[releases]: https://github.com/gazoodle/gecko-home-assistant/releases
+[releases-shield]: https://img.shields.io/github/release/BenSeverson/gecko-home-assistant.svg?style=for-the-badge
+[releases]: https://github.com/BenSeverson/gecko-home-assistant/releases
