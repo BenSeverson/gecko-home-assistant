@@ -1,51 +1,28 @@
 """Constants for Gecko."""
 
-import json
-import pathlib
+from homeassistant.const import Platform
 
-from geckolib import VERSION as GECKOLIB_VERSION
+DOMAIN = "gecko"
 
-# Base component constants, some loaded directly from the manifest
-_LOADER_PATH = pathlib.Path(__loader__.path)
-_MANIFEST_PATH = _LOADER_PATH.parent / "manifest.json"
-with pathlib.Path.open(_MANIFEST_PATH, encoding="Latin1") as json_file:
-    data = json.load(json_file)
-NAME = f"{data['name']}"
-DOMAIN = f"{data['domain']}"
-DOMAIN_DATA = f"{DOMAIN}_data"
-VERSION = f"{data['version']}"
-ISSUE_URL = f"{data['issue_tracker']}"
+# Platforms available once the spa facade is ready
+PLATFORMS: list[Platform] = [
+    Platform.BINARY_SENSOR,
+    Platform.BUTTON,
+    Platform.CLIMATE,
+    Platform.DATE,
+    Platform.FAN,
+    Platform.LIGHT,
+    Platform.NUMBER,
+    Platform.SELECT,
+    Platform.SENSOR,
+    Platform.SWITCH,
+    Platform.WATER_HEATER,
+]
 
-# Icons
-ICON = "mdi:format-quote-close"
-
-# Device classes
-BINARY_SENSOR_DEVICE_CLASS = "connectivity"
-
-# Platforms
-BINARY_SENSOR = "binary_sensor"
-BUTTON = "button"
-FAN = "fan"
-SENSOR = "sensor"
-SWITCH = "switch"
-CLIMATE = "climate"
-LIGHT = "light"
-SELECT = "select"
-WATER_HEATER = "water_heater"
-DATE = "date"
-NUMBER = "number"
-PLATFORMS = [
-    BINARY_SENSOR,
-    BUTTON,
-    FAN,
-    SENSOR,
-    SWITCH,
-    CLIMATE,
-    LIGHT,
-    SELECT,
-    WATER_HEATER,
-    DATE,
-    NUMBER,
+# Platforms available while the spa is still connecting, or is disconnected
+STATUS_PLATFORMS: list[Platform] = [
+    Platform.BUTTON,
+    Platform.SENSOR,
 ]
 
 # Option keys
@@ -57,17 +34,4 @@ CONF_SPA_IDENTIFIER = "spaidentifier"
 CONF_SPA_ADDRESS = "spaipaddress"
 CONF_CLIENT_ID = "clientid"
 
-# Defaults
-DEFAULT_NAME = DOMAIN
-
-
-STARTUP_MESSAGE = f"""
--------------------------------------------------------------------
-{NAME}
-Version: {VERSION}
-Gecko Lib: {GECKOLIB_VERSION}
-This is a custom integration!
-If you have any issues with this you need to open an issue here:
-{ISSUE_URL}
--------------------------------------------------------------------
-"""
+MANUFACTURER = "Gecko Alliance"

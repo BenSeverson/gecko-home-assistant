@@ -1,90 +1,101 @@
 """GeckoEntity class."""
 
-import logging
-from typing import Any
+from __future__ import annotations
 
-from geckolib import GeckoAutomationBase, Observable
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EntityCategory
+import contextlib
+from typing import TYPE_CHECKING, Any
+
+from geckolib import GeckoAutomationBase, GeckoReminderType, Observable
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity
 
-from .const import DOMAIN
-from .spa_manager import GeckoSpaManager
+from .const import DOMAIN, MANUFACTURER
 
-_LOGGER = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from homeassistant.const import EntityCategory
+
+    from .spa_manager import GeckoSpaManager
+
+_REMINDER_NAMES: dict[GeckoReminderType, str] = {
+    GeckoReminderType.RINSE_FILTER: "Rinse filter",
+    GeckoReminderType.CLEAN_FILTER: "Clean filter",
+    GeckoReminderType.CHANGE_WATER: "Change water",
+    GeckoReminderType.CHECK_SPA: "Check Spa",
+    GeckoReminderType.CHANGE_OZONATOR: "Change Ozonator",
+    GeckoReminderType.CHANGE_VISION_CARTRIDGE: "Change Vision cartridge",
+}
+
+
+def reminder_name(reminder_type: GeckoReminderType) -> str:
+    """Get the display name for a reminder type."""
+    return _REMINDER_NAMES.get(reminder_type, "Unknown")
 
 
 class GeckoEntityBase(Entity):
     """Base for all Gecko entities."""
 
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+
     def __init__(
         self,
         spaman: GeckoSpaManager,
-        config_entry: ConfigEntry,
         unique_id: str,
         name: str,
-        parent_name: str,
+        entity_category: EntityCategory | None = None,
     ) -> None:
         """Initialize the entity class."""
         self.spaman = spaman
-        self.config_entry = config_entry
-        self._unique_id = unique_id
-        self._name = name
-        self._parent_name = parent_name
-        self._entity_category: str | None = None
-        _LOGGER.info("Setup entity %r", self)
+        self._attr_unique_id = unique_id
+        self._attr_name = name
+        self._attr_entity_category = entity_category
+        self._observables: list[Observable] = []
+
+    def _observe(self, observable: Any) -> None:
+        """Register something to watch for the time this entity is in HA."""
+        if isinstance(observable, Observable) and observable not in self._observables:
+            self._observables.append(observable)
+
+    async def async_added_to_hass(self) -> None:
+        """Start watching for changes once HA knows about the entity."""
+        await super().async_added_to_hass()
+        for observable in self._observables:
+            observable.watch(self._on_change)
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Stop watching for changes."""
+        for observable in self._observables:
+            # geckolib drops all observers itself when it tears the facade
+            # down, so ours may already have gone
+            with contextlib.suppress(ValueError):
+                observable.unwatch(self._on_change)
+        await super().async_will_remove_from_hass()
+
+    def _on_change(self, _sender: Any, _old_value: Any, _new_value: Any) -> None:
+        """Notify HA of the change."""
+        if self.hass is not None:
+            self.async_schedule_update_ha_state()
 
     @property
-    def unique_id(self) -> str:
-        """Return a unique ID to use for this entity."""
-        return self._unique_id
-
-    @property
-    def name(self) -> str:
-        """Return the name of the entity."""
-        return f"{self._parent_name}: {self._name}"
-
-    @property
-    def device_info(self) -> DeviceInfo | None:
+    def device_info(self) -> DeviceInfo:
         """Get device information."""
-        info = DeviceInfo()
-        info["identifiers"] = {(DOMAIN, self.spaman.unique_id)}
-        info["name"] = self.spaman.spa_name
-        info["manufacturer"] = "Gecko Alliance"
-        if self.spaman.facade is not None:
-            info["model"] = (
-                f"{self.spaman.facade.spa.pack} {self.spaman.facade.spa.version}"
-            )
+        info = DeviceInfo(
+            identifiers={(DOMAIN, self.spaman.unique_id)},
+            name=self.spaman.spa_name,
+            manufacturer=MANUFACTURER,
+        )
+        if (facade := self.spaman.facade) is not None:
+            spa = facade.spa
+            info["model"] = f"{spa.pack} {spa.version}"
             info["sw_version"] = (
-                f"SpaPack:v{self.spaman.facade.spa.revision} "
-                f"Config:{self.spaman.facade.spa.config_version} "
-                f"Log:{self.spaman.facade.spa.log_version}"
+                f"SpaPack:v{spa.revision} "
+                f"Config:{spa.config_version} "
+                f"Log:{spa.log_version}"
             )
             info["hw_version"] = (
-                f"EN:{self.spaman.facade.spa.intouch_version_en} "
-                f"CO:{self.spaman.facade.spa.intouch_version_co}"
+                f"EN:{spa.intouch_version_en} CO:{spa.intouch_version_co}"
             )
         return info
-
-    @property
-    def entity_category(self) -> str | None:
-        """Return the entity category."""
-        return self._entity_category
-
-    @property
-    def extra_state_attributes(self) -> str | None:
-        """Return the extra state attributes."""
-        return None
-
-    @property
-    def should_poll(self) -> bool:
-        """Return false as we're a push model."""
-        return False
-
-    def __repr__(self) -> str:
-        """Return a unique name."""
-        return f"{self._name}/{self._unique_id}"
 
 
 class GeckoEntity(GeckoEntityBase):
@@ -93,25 +104,15 @@ class GeckoEntity(GeckoEntityBase):
     def __init__(
         self,
         spaman: GeckoSpaManager,
-        config_entry: ConfigEntry,
         automation_entity: GeckoAutomationBase,
         entity_category: EntityCategory | None = None,
     ) -> None:
         """Initialize a gecko entity."""
         super().__init__(
             spaman,
-            config_entry,
             automation_entity.unique_id,
             automation_entity.name,
-            automation_entity.parent_name,
+            entity_category,
         )
-        self._automation_entity = automation_entity
-        if isinstance(automation_entity, Observable):
-            self._automation_entity.watch(self._on_change)
-        if entity_category is not None:
-            self._entity_category = entity_category
-
-    def _on_change(self, _sender: Any, _old_value: Any, _new_value: Any) -> None:
-        """Notify HA of the change."""
-        if self.hass is not None:
-            self.async_schedule_update_ha_state(force_refresh=True)
+        self._automation_entity: Any = automation_entity
+        self._observe(automation_entity)

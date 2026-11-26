@@ -1,76 +1,56 @@
 """Number platform for Gecko."""
 
-import logging
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
-from homeassistant.components.number import NumberEntity
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.const import EntityCategory
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN, NUMBER
 from .entity import GeckoEntity
 
 if TYPE_CHECKING:
-    from .spa_manager import GeckoSpaManager
+    from homeassistant.core import HomeAssistant
+    from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-_LOGGER = logging.getLogger(__name__)
+    from .spa_manager import GeckoConfigEntry
+
+PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    _hass: HomeAssistant,
+    entry: GeckoConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up number platform."""
-    spaman: GeckoSpaManager = hass.data[DOMAIN][entry.entry_id]
-    numbers: list = []
-    if spaman.can_use_facade and spaman.facade is not None:
-        if spaman.facade.mrsteam.is_available:
-            numbers.append(
-                GeckoNumber(spaman, entry, spaman.facade.mrsteam.user_runtime, None)
+    spaman = entry.runtime_data
+    if not spaman.can_use_facade or (facade := spaman.facade) is None:
+        return
+    numbers: list[GeckoNumber] = []
+    if facade.mrsteam.is_available:
+        numbers.append(GeckoNumber(spaman, facade.mrsteam.user_runtime))
+    if facade.bainultra.is_available:
+        bain = facade.bainultra
+        numbers.append(GeckoNumber(spaman, bain.bath_runtime))
+        numbers.append(GeckoNumber(spaman, bain.bath_intensity))
+        numbers.extend(
+            GeckoNumber(spaman, number, EntityCategory.CONFIG)
+            for number in (
+                bain.drying_cycle_delay,
+                bain.drying_cycle_hour,
+                bain.drying_cycle_minute,
             )
-        if spaman.facade.bainultra.is_available:
-            numbers.append(
-                GeckoNumber(spaman, entry, spaman.facade.bainultra.bath_runtime, None)
-            )
-            numbers.append(
-                GeckoNumber(spaman, entry, spaman.facade.bainultra.bath_intensity, None)
-            )
-            numbers.append(
-                GeckoNumber(
-                    spaman,
-                    entry,
-                    spaman.facade.bainultra.drying_cycle_delay,
-                    EntityCategory.CONFIG,
-                )
-            )
-            numbers.append(
-                GeckoNumber(
-                    spaman,
-                    entry,
-                    spaman.facade.bainultra.drying_cycle_hour,
-                    EntityCategory.CONFIG,
-                )
-            )
-            numbers.append(
-                GeckoNumber(
-                    spaman,
-                    entry,
-                    spaman.facade.bainultra.drying_cycle_minute,
-                    EntityCategory.CONFIG,
-                )
-            )
-
+        )
     async_add_entities(numbers)
-    spaman.platform_loaded(NUMBER)
 
 
 class GeckoNumber(GeckoEntity, NumberEntity):
-    """Gecko Date class."""
+    """Gecko Number class."""
 
     @property
-    def native_value(self) -> float:
-        """Return the native value of the sensor."""
+    def native_value(self) -> float | None:
+        """Return the native value of the number."""
         return self._automation_entity.native_value
 
     @property
@@ -83,26 +63,24 @@ class GeckoNumber(GeckoEntity, NumberEntity):
         """Get the max value."""
         return self._automation_entity.native_max_value
 
-    async def async_set_native_value(self, new_value: float) -> None:
+    async def async_set_native_value(self, value: float) -> None:
         """Set the value of the number entity."""
-        await self._automation_entity.async_set_native_value(new_value)
+        await self._automation_entity.async_set_native_value(value)
 
     @property
-    def native_unit_of_measurement(self) -> str:
+    def native_unit_of_measurement(self) -> str | None:
         """Return the unit of measurement."""
         return self._automation_entity.native_unit_of_measurement
 
     @property
-    def native_step(self) -> float:
-        """Retuurn the step size."""
+    def native_step(self) -> float | None:
+        """Return the step size."""
         return self._automation_entity.native_step
 
     @property
-    def mode(self) -> str:
+    def mode(self) -> NumberMode:
         """Return the preferred entry mode."""
-        return self._automation_entity.mode
-
-    @property
-    def device_class(self) -> str:
-        """Return the device class of the sensor."""
-        return ""  # self._automation_entity.device_class
+        try:
+            return NumberMode(self._automation_entity.mode)
+        except ValueError:
+            return NumberMode.AUTO

@@ -1,60 +1,52 @@
 """Switch platform for Gecko."""
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN, SWITCH
 from .entity import GeckoEntity
 
 if TYPE_CHECKING:
-    from .spa_manager import GeckoSpaManager
+    from homeassistant.core import HomeAssistant
+    from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+
+    from .spa_manager import GeckoConfigEntry
+
+PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    _hass: HomeAssistant,
+    entry: GeckoConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up sensor platform."""
-    spaman: GeckoSpaManager = hass.data[DOMAIN][entry.entry_id]
-    if spaman.facade is not None:
-        entities = []
-        if spaman.facade.eco_mode is not None:
-            entities.append(
-                GeckoBinarySwitch(
-                    spaman, entry, spaman.facade.eco_mode, EntityCategory.CONFIG
-                )
-            )
-        if spaman.facade.standby is not None:
-            entities.append(
-                GeckoBinarySwitch(
-                    spaman, entry, spaman.facade.standby, EntityCategory.CONFIG
-                )
-            )
-        if spaman.facade.mrsteam.is_available:
-            entities.extend(
-                [
-                    GeckoBinarySwitch(spaman, entry, switch, None)
-                    for switch in spaman.facade.mrsteam.switches
-                ]
-            )
-        if spaman.facade.bainultra.is_available:
-            entities.extend(
-                [
-                    GeckoBinarySwitch(spaman, entry, switch, None)
-                    for switch in spaman.facade.bainultra.switches
-                ]
-            )
-
-        async_add_entities(entities)
-    spaman.platform_loaded(SWITCH)
+    """Set up switch platform."""
+    spaman = entry.runtime_data
+    if (facade := spaman.facade) is None:
+        return
+    switches: list[GeckoBinarySwitch] = [
+        GeckoBinarySwitch(spaman, switch, EntityCategory.CONFIG)
+        for switch in (facade.eco_mode, facade.standby)
+        if switch is not None
+    ]
+    if facade.mrsteam.is_available:
+        switches.extend(
+            GeckoBinarySwitch(spaman, switch) for switch in facade.mrsteam.switches
+        )
+    if facade.bainultra.is_available:
+        switches.extend(
+            GeckoBinarySwitch(spaman, switch) for switch in facade.bainultra.switches
+        )
+    async_add_entities(switches)
 
 
 class GeckoBinarySwitch(GeckoEntity, SwitchEntity):
     """Gecko switch class."""
+
+    _attr_icon = "mdi:toggle-switch"
 
     async def async_turn_on(self, **_kwargs: Any) -> None:
         """Turn on the switch."""
@@ -63,11 +55,6 @@ class GeckoBinarySwitch(GeckoEntity, SwitchEntity):
     async def async_turn_off(self, **_kwargs: Any) -> None:
         """Turn off the switch."""
         await self._automation_entity.async_turn_off()
-
-    @property
-    def icon(self) -> str:
-        """Return the icon of this switch."""
-        return "mdi:toggle-switch"
 
     @property
     def is_on(self) -> bool:
