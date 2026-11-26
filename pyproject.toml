@@ -1,0 +1,51 @@
+# Development tooling configuration. This repository is a Home Assistant custom
+# integration, it is not built or published as a Python package. Runtime
+# requirements live in custom_components/gecko/manifest.json.
+
+[tool.ruff]
+# The oldest Python that the minimum Home Assistant in hacs.json runs on
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "ANN401", # Dynamically typed expressions (typing.Any) are disallowed
+    "COM812", # incompatible with formatter
+    "CPY001", # Copyright notices are not used in this project
+    "D203",   # no-blank-line-before-class (incompatible with formatter)
+    "D212",   # multi-line-summary-first-line (incompatible with formatter)
+    "ISC001", # incompatible with formatter
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "ARG001",  # Fixtures are requested for their side effects
+    "PLR2004", # Magic values are fine in assertions
+    "S101",    # Tests use assert
+    "SLF001",  # Tests poke at internals
+]
+
+[tool.ruff.lint.flake8-pytest-style]
+fixture-parentheses = false
+
+[tool.ruff.lint.isort]
+known-first-party = ["custom_components"]
+
+[tool.ruff.lint.pyupgrade]
+keep-runtime-typing = true
+
+[tool.ruff.lint.mccabe]
+max-complexity = 25
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = ["--strict-markers", "--strict-config"]
+
+[tool.coverage.run]
+source = ["custom_components/gecko"]
+
+[tool.coverage.report]
+show_missing = true
+exclude_also = ["if TYPE_CHECKING:"]

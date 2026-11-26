@@ -1,15 +1,20 @@
 # artifacts
 __pycache__
 SpaPackStruct.xml
-.pytest*
 *.egg-info
 */build/*
 */dist/*
 
-# misc
-.coverage
-.vscode
+# tooling
+.venv
+.pytest*
+.ruff_cache
+.coverage*
 coverage.xml
+htmlcov
+
+# misc
+.vscode
 
 # Home Assistant configuration
 config/*
