@@ -67,19 +67,25 @@ class GeckoHAWaterHeater(GeckoEntity, WaterHeaterEntity):
         return self._automation_entity.current_operation
 
     @property
-    def temperature_unit(self) -> str:
+    def native_temperature_unit(self) -> str:
         """Get the current temperature unit."""
         return self._automation_entity.temperature_unit
 
     @property
-    def current_temperature(self) -> float | None:
+    def native_current_temperature(self) -> float | None:
         """Get the current temperature."""
         return self._automation_entity.current_temperature
 
     @property
-    def target_temperature(self) -> float | None:
+    def native_target_temperature(self) -> float | None:
         """Get the current target temperature."""
         return self._automation_entity.target_temperature
+
+    # Home Assistant 2026.11 renamed these to the native_ names above and drops
+    # the old ones in 2027.11. Older releases only read the old names.
+    temperature_unit = native_temperature_unit
+    current_temperature = native_current_temperature
+    target_temperature = native_target_temperature
 
     @property
     def min_temp(self) -> float:
