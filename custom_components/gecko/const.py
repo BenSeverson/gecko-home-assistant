@@ -1,13 +1,14 @@
 """Constants for Gecko."""
 
-import pathlib
 import json
+import pathlib
+
 from geckolib import VERSION as GECKOLIB_VERSION
 
 # Base component constants, some loaded directly from the manifest
 _LOADER_PATH = pathlib.Path(__loader__.path)
 _MANIFEST_PATH = _LOADER_PATH.parent / "manifest.json"
-with open(_MANIFEST_PATH, encoding="Latin1") as json_file:
+with pathlib.Path.open(_MANIFEST_PATH, encoding="Latin1") as json_file:
     data = json.load(json_file)
 NAME = f"{data['name']}"
 DOMAIN = f"{data['domain']}"
@@ -29,7 +30,23 @@ SENSOR = "sensor"
 SWITCH = "switch"
 CLIMATE = "climate"
 LIGHT = "light"
-PLATFORMS = [BINARY_SENSOR, BUTTON, FAN, SENSOR, SWITCH, CLIMATE, LIGHT]
+SELECT = "select"
+WATER_HEATER = "water_heater"
+DATE = "date"
+NUMBER = "number"
+PLATFORMS = [
+    BINARY_SENSOR,
+    BUTTON,
+    FAN,
+    SENSOR,
+    SWITCH,
+    CLIMATE,
+    LIGHT,
+    SELECT,
+    WATER_HEATER,
+    DATE,
+    NUMBER,
+]
 
 # Option keys
 SHOW_PING_KEY = "show_ping"
