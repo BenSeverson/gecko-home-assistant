@@ -7,7 +7,6 @@ import logging
 import uuid
 from typing import Any
 
-import voluptuous as vol
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.core import callback
 
@@ -20,6 +19,12 @@ from .const import (
     SHOW_PING_KEY,
 )
 from .spa_manager import GeckoConfigEntry, GeckoSpaManager
+
+try:
+    # Home Assistant replaced voluptuous with the API-compatible probatio
+    import probatio as vol
+except ImportError:  # pragma: no cover - older Home Assistant releases
+    import voluptuous as vol  # type: ignore[no-redef]
 
 _LOGGER = logging.getLogger(__name__)
 

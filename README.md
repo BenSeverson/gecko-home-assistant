@@ -57,6 +57,8 @@ provide the ability to control your spa. This functionality is local only.
    "My Spa Pump 1". Entity ids are not affected
  - Minimum Home Assistant version is now 2025.2
  - Add a test suite, and run it along with a formatting check on every push
+ - Fix deprecation warnings on Home Assistant 2026.11 for the climate and water heater entities
+ - Add type checking with mypy
 
 ## v0.1.33
  - Bump geckolib to 1.0.16, which fixes the silent loss of the spa push subscription that
@@ -226,7 +228,7 @@ The integration is developed against the versions pinned in `requirements.txt`.
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 scripts/setup     # install the development requirements
-scripts/lint      # format and lint with ruff
+scripts/lint      # format and lint with ruff, type check with mypy
 scripts/test      # run the tests
 scripts/develop   # run Home Assistant on port 8123 with the integration loaded
 ```

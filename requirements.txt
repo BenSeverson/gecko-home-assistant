@@ -2,6 +2,7 @@
 # are in custom_components/gecko/manifest.json.
 colorlog==6.12.0
 geckolib==1.0.16
+mypy==2.4.1
 # This pins the version of Home Assistant that the tests run against
 pytest-homeassistant-custom-component==0.13.375
 ruff==0.17.6
