@@ -1,77 +1,78 @@
 """Climate platform for Gecko."""
 
-import logging
-from typing import Any
+from __future__ import annotations
 
-from geckolib import GeckoAsyncFacade, GeckoWaterCare, GeckoWaterHeater
-from homeassistant.components.climate import ClimateEntity
-from homeassistant.components.climate.const import (
+from typing import TYPE_CHECKING, Any
+
+from homeassistant.components.climate import (
+    ClimateEntity,
     ClimateEntityFeature,
+    HVACAction,
     HVACMode,
 )
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.const import ATTR_TEMPERATURE
 
-from .const import CLIMATE, DOMAIN
 from .entity import GeckoEntity
-from .spa_manager import GeckoSpaManager
 
-_LOGGER = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from geckolib import GeckoWaterCare, GeckoWaterHeater
+    from homeassistant.core import HomeAssistant
+    from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+
+    from .spa_manager import GeckoConfigEntry, GeckoSpaManager
+
+PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    _hass: HomeAssistant,
+    entry: GeckoConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up climate platform."""
-    spaman: GeckoSpaManager = hass.data[DOMAIN][entry.entry_id]
-    if spaman.facade is not None and spaman.facade.water_heater.is_available:
-        facade: GeckoAsyncFacade = spaman.facade
+    spaman = entry.runtime_data
+    if (facade := spaman.facade) is not None and facade.water_heater.is_available:
         async_add_entities(
-            [
-                GeckoClimate(
-                    spaman,
-                    entry,
-                    facade.water_heater,
-                    facade.water_care,
-                )
-            ]
+            [GeckoClimate(spaman, facade.water_heater, facade.water_care)]
         )
-    spaman.platform_loaded(CLIMATE)
 
 
 class GeckoClimate(GeckoEntity, ClimateEntity):
     """Gecko Climate class."""
 
+    _attr_icon = "mdi:hot-tub"
+    _attr_hvac_modes = [HVACMode.AUTO]  # noqa: RUF012
+    _attr_hvac_mode = HVACMode.AUTO
+    _attr_supported_features = (
+        ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.PRESET_MODE
+    )
+
     def __init__(
         self,
         spaman: GeckoSpaManager,
-        config_entry: ConfigEntry,
         automation_entity: GeckoWaterHeater,
         water_care: GeckoWaterCare,
     ) -> None:
         """Initialize Gecko climate entity."""
-        self._attr_hvac_modes = [HVACMode.AUTO]
-        self._attr_hvac_mode = HVACMode.AUTO
-        self._attr_supported_features = (
-            ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.PRESET_MODE
-        )
-        super().__init__(spaman, config_entry, automation_entity)
+        super().__init__(spaman, automation_entity)
         self._water_care = water_care
         if self._water_care.is_available:
-            self._water_care.watch(self._on_change)
+            self._observe(self._water_care)
 
     @property
-    def icon(self) -> str:
-        """Return the icon of the sensor."""
-        return "mdi:hot-tub"
+    def available(self) -> bool:
+        """Return whether the heater is available."""
+        return self._automation_entity.is_available
 
     @property
-    def hvac_action(self) -> str:
+    def hvac_action(self) -> HVACAction | None:
         """The current HVAC action."""
-        # I happen to know that the operation modes match HA's modes but
-        # they are proper cased, so we just move to lower ...
-        return self._automation_entity.current_operation.lower()
+        # The geckolib operation names match HA's actions, but they are
+        # proper cased, so we just move to lower ...
+        try:
+            return HVACAction(self._automation_entity.current_operation.lower())
+        except ValueError:
+            return None
 
     @property
     def preset_modes(self) -> list[str] | None:
@@ -82,7 +83,7 @@ class GeckoClimate(GeckoEntity, ClimateEntity):
     def preset_mode(self) -> str | None:
         """Get the current preset mode."""
         if self._water_care.mode is None:
-            return "Waiting..."
+            return None
         return self._water_care.modes[self._water_care.mode]
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
@@ -90,19 +91,25 @@ class GeckoClimate(GeckoEntity, ClimateEntity):
         await self._water_care.async_set_mode(preset_mode)
 
     @property
-    def temperature_unit(self) -> str:
+    def native_temperature_unit(self) -> str:
         """Get the current temperature unit."""
         return self._automation_entity.temperature_unit
 
     @property
-    def current_temperature(self) -> float:
+    def native_current_temperature(self) -> float | None:
         """Get the current temperature."""
         return self._automation_entity.current_temperature
 
     @property
-    def target_temperature(self) -> float:
+    def native_target_temperature(self) -> float | None:
         """Get the current target temperature."""
         return self._automation_entity.target_temperature
+
+    # Home Assistant 2026.11 renamed these to the native_ names above and drops
+    # the old ones in 2027.11. Older releases only read the old names.
+    temperature_unit = native_temperature_unit
+    current_temperature = native_current_temperature
+    target_temperature = native_target_temperature
 
     @property
     def min_temp(self) -> float:
@@ -115,14 +122,9 @@ class GeckoClimate(GeckoEntity, ClimateEntity):
         return self._automation_entity.max_temp
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
-        """Set the target temperature asyncronously."""
-        await self._automation_entity.async_set_target_temperature(
-            kwargs["temperature"]
-        )
+        """Set the target temperature asynchronously."""
+        if (temperature := kwargs.get(ATTR_TEMPERATURE)) is not None:
+            await self._automation_entity.async_set_target_temperature(temperature)
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
-        """Fake function to set HVAC mode."""
-
-    def _on_change(self, _sender: Any, _old_value: Any, _new_value: Any) -> None:
-        self._attr_available = self._automation_entity.is_available
-        return super()._on_change(_sender, _old_value, _new_value)
+        """Do nothing, the spa only has the one mode."""

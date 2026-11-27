@@ -7,19 +7,19 @@ import logging
 from typing import TYPE_CHECKING, Any, Self
 
 from geckolib import GeckoAsyncSpaMan, GeckoSpaEvent
+from homeassistant.config_entries import ConfigEntry
 
-from .const import (
-    BUTTON,
-    PLATFORMS,
-    SENSOR,
-    SHOW_PING_KEY,
-)
+from .const import PLATFORMS, SHOW_PING_KEY, STATUS_PLATFORMS
 
 if TYPE_CHECKING:
-    from homeassistant.config_entries import ConfigEntry
+    from homeassistant.const import Platform
     from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
+
+_QUEUE_TASK_KEY = "HASPAMAN"
+
+type GeckoConfigEntry = ConfigEntry[GeckoSpaManager]
 
 
 class GeckoSpaManager(GeckoAsyncSpaMan):
@@ -28,32 +28,50 @@ class GeckoSpaManager(GeckoAsyncSpaMan):
     def __init__(
         self,
         client_id: str,
-        hass: HomeAssistant | None,
-        entry: ConfigEntry | None,
+        hass: HomeAssistant | None = None,
+        entry: GeckoConfigEntry | None = None,
         **kwargs: Any,
     ) -> None:
-        """Initialize the Spa Manager."""
+        """
+        Initialize the Spa Manager.
+
+        The config flow uses a manager without hass or a config entry, purely
+        to locate spas on the network.
+        """
         super().__init__(client_id, **kwargs)
-        self.hass: HomeAssistant | None = hass
-        self.entry: ConfigEntry | None = entry
+        self.hass = hass
+        self.entry = entry
 
         self._can_use_facade = False
 
-        self.platforms = []
-        self._event_queue: asyncio.Queue = asyncio.Queue()
+        self.platforms: list[Platform] = []
+        self._event_queue: asyncio.Queue[GeckoSpaEvent] = asyncio.Queue()
 
     async def __aenter__(self) -> Self:
         """Perform async enter."""
         await super().__aenter__()
-        self.add_task(
-            self._queue_loop(), "Home Assistant Gecko Spa Manager", "HASPAMAN"
-        )
+        self.start_event_processing()
         return self
 
     async def __aexit__(self, *exc_info: object) -> None:
         """Support async with."""
-        self.cancel_key_tasks("HASPAMAN")
+        self.stop_event_processing()
         return await super().__aexit__(*exc_info)
+
+    def start_event_processing(self) -> None:
+        """Start handling the spa manager events that (re)build platforms."""
+        self.add_task(
+            self._queue_loop(), "Home Assistant Gecko Spa Manager", _QUEUE_TASK_KEY
+        )
+
+    def stop_event_processing(self) -> None:
+        """
+        Stop handling spa manager events.
+
+        This must happen before the config entry is unloaded, otherwise a
+        queued event can set platforms up again part way through the unload.
+        """
+        self.cancel_key_tasks(_QUEUE_TASK_KEY)
 
     @property
     def can_use_facade(self) -> bool:
@@ -68,14 +86,15 @@ class GeckoSpaManager(GeckoAsyncSpaMan):
             try:
                 if event == GeckoSpaEvent.CLIENT_FACADE_IS_READY:
                     # Wait for a single update so we have reminders and watercare
-                    await self.facade.wait_for_one_update()
+                    if self.facade is not None:
+                        await self.facade.wait_for_one_update()
                     self._can_use_facade = True
                     await self.reload()
 
-                elif event in [
+                elif event in (
                     GeckoSpaEvent.CLIENT_HAS_RECONNECT_BUTTON,
                     GeckoSpaEvent.CLIENT_HAS_STATUS_SENSOR,
-                ]:
+                ):
                     await self.reload()
 
                 elif event == GeckoSpaEvent.CLIENT_FACADE_TEARDOWN:
@@ -85,6 +104,8 @@ class GeckoSpaManager(GeckoAsyncSpaMan):
                 raise
             except Exception:
                 _LOGGER.exception("Exception handling queued event %s", event)
+            finally:
+                self._event_queue.task_done()
 
     async def handle_event(self, event: GeckoSpaEvent, **_kwargs: Any) -> None:
         """Handle spa manager events."""
@@ -96,39 +117,34 @@ class GeckoSpaManager(GeckoAsyncSpaMan):
 
     async def unload_platforms(self) -> bool:
         """Unload the platforms that were previously loaded."""
-        if self.platforms:
-            _LOGGER.debug("Unload platforms %s", self.platforms)
+        if self.hass is None or self.entry is None or not self.platforms:
+            return True
 
-            unloaded: bool = await self.hass.config_entries.async_unload_platforms(
-                self.entry, self.platforms
-            )
+        _LOGGER.debug("Unload platforms %s", self.platforms)
+        unloaded = await self.hass.config_entries.async_unload_platforms(
+            self.entry, self.platforms
+        )
+        if unloaded:
             self.platforms = []
-            return unloaded
-        return True
+        return unloaded
 
     async def load_platforms(self) -> None:
         """Load the appropriate platforms."""
-        platforms = [SENSOR, BUTTON]
-        if self._can_use_facade:
-            platforms = PLATFORMS
-        self.platforms = platforms
-
+        if self.hass is None or self.entry is None:
+            return
+        platforms = list(PLATFORMS if self._can_use_facade else STATUS_PLATFORMS)
         _LOGGER.debug("Load platforms %s", platforms)
+        self.platforms = platforms
         await self.hass.config_entries.async_forward_entry_setups(self.entry, platforms)
-
-    def platform_loaded(self, platform: str) -> None:
-        """Call when a platform has loaded."""
-        if platform not in self.platforms:
-            self.platforms.append(platform)
 
     async def reload(self) -> None:
         """Reload the platforms."""
-        await self.unload_platforms()
-        await self.load_platforms()
+        if await self.unload_platforms():
+            await self.load_platforms()
 
     @property
     def show_ping_sensor(self) -> bool:
         """Show the ping sensor property."""
-        if SHOW_PING_KEY not in self.entry.options:
+        if self.entry is None:
             return False
-        return self.entry.options[SHOW_PING_KEY]
+        return bool(self.entry.options.get(SHOW_PING_KEY, False))

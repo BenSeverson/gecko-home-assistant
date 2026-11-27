@@ -44,6 +44,22 @@ provide the ability to control your spa. This functionality is local only.
 
 # Version History
 
+## Unreleased
+ - Fix the upgrade of very old config entries, which crashed on recent Home Assistant versions
+ - Fix the labels on the setup form, the IP address and spa selection fields had none
+ - Stop the same spa being added twice
+ - Close the discovery connection when the setup dialog is finished or dismissed
+ - Fix a race where an unload or reload could leave entities behind
+ - Reminder date entities now report a date rather than a timestamp
+ - Temperature sensors now record long-term statistics
+ - Add downloadable diagnostics to the integration page
+ - Entities now use Home Assistant's device based naming, so "My Spa: Pump 1" is shown as
+   "My Spa Pump 1". Entity ids are not affected
+ - Minimum Home Assistant version is now 2025.2
+ - Add a test suite, and run it along with a formatting check on every push
+ - Fix deprecation warnings on Home Assistant 2026.11 for the climate and water heater entities
+ - Add type checking with mypy
+
 ## v0.1.33
  - Bump geckolib to 1.0.16, which fixes the silent loss of the spa push subscription that
    left entities stale for hours while the spa still showed as connected
@@ -204,6 +220,20 @@ If you don't have/want HACS installed, you will need to manually install the int
 5. Place the files you downloaded in the new directory (folder) you created.
 6. Restart Home Assistant
 7. In the HA UI go to "Configuration" -> "Integrations" click "+" and search for "Gecko"
+
+## Development
+
+The integration is developed against the versions pinned in `requirements.txt`.
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+scripts/setup     # install the development requirements
+scripts/lint      # format and lint with ruff, type check with mypy
+scripts/test      # run the tests
+scripts/develop   # run Home Assistant on port 8123 with the integration loaded
+```
+
+Optionally `pip install pre-commit && pre-commit install` to lint on every commit.
 
 ## Using the snapshot functionality
 

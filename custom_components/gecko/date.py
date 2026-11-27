@@ -1,141 +1,80 @@
 """Date platform for Gecko."""
 
+from __future__ import annotations
+
 import logging
-from datetime import UTC, date, datetime, timedelta
-from typing import Any
+from datetime import date, timedelta
+from typing import TYPE_CHECKING
 
 from geckolib import GeckoReminderType
 from homeassistant.components.date import DateEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import dt as dt_util
 
-from .const import DATE, DOMAIN
-from .entity import GeckoEntity, GeckoEntityBase
-from .spa_manager import GeckoSpaManager
+from .entity import GeckoEntityBase, reminder_name
+
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+    from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+
+    from .spa_manager import GeckoConfigEntry, GeckoSpaManager
 
 _LOGGER = logging.getLogger(__name__)
 
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    _hass: HomeAssistant,
+    entry: GeckoConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up date platform."""
-    spaman: GeckoSpaManager = hass.data[DOMAIN][entry.entry_id]
-    dates: list = []
+    spaman = entry.runtime_data
     if (
         spaman.can_use_facade
-        and spaman.facade is not None
-        and spaman.facade.reminders_manager.is_available
+        and (facade := spaman.facade) is not None
+        and facade.reminders_manager.is_available
     ):
-        dates.extend(
-            GeckoReminderDate(spaman, entry, reminder.reminder_type)
-            for reminder in spaman.facade.reminders_manager.reminders
+        async_add_entities(
+            GeckoReminderDate(spaman, reminder.reminder_type)
+            for reminder in facade.reminders_manager.reminders
         )
-    async_add_entities(dates)
-    spaman.platform_loaded(DATE)
-
-
-class GeckoDate(GeckoEntity, DateEntity):
-    """Gecko Date class."""
-
-    @property
-    def native_value(self) -> Any:
-        """Return the native value of the sensor."""
-        return self._automation_entity.state
-
-    @property
-    def native_unit_of_measurement(self) -> str:
-        """Return the unit of measurement."""
-        return self._automation_entity.unit_of_measurement
-
-    @property
-    def device_class(self) -> str:
-        """Return the device class of the sensor."""
-        return self._automation_entity.device_class
 
 
 class GeckoReminderDate(GeckoEntityBase, DateEntity):
-    """Gecko reminder sensor class."""
+    """Gecko reminder date class."""
+
+    _attr_icon = "mdi:reminder"
 
     def __init__(
-        self,
-        spaman: GeckoSpaManager,
-        config_entry: ConfigEntry,
-        reminder_type: GeckoReminderType,
+        self, spaman: GeckoSpaManager, reminder_type: GeckoReminderType
     ) -> None:
-        """Initialize the reminder sensor."""
+        """Initialize the reminder date."""
         super().__init__(
             spaman,
-            config_entry,
             f"{spaman.unique_id}-{GeckoReminderType.to_string(reminder_type)}",
-            f"{GeckoReminderDate.type_to_name(reminder_type)} due",
-            spaman.spa_name,
+            f"{reminder_name(reminder_type)} due",
+            EntityCategory.CONFIG,
         )
         self._reminder_type = reminder_type
-        self.spaman.facade.reminders_manager.watch(self._on_change)
-        self._entity_category = EntityCategory.CONFIG
+        if spaman.facade is not None:
+            self._observe(spaman.facade.reminders_manager)
 
     @property
-    def native_value(self) -> datetime | None:
-        """Get the sensor native value."""
-        if self.spaman.facade is None:
+    def native_value(self) -> date | None:
+        """Get the date that the reminder is due."""
+        if (facade := self.spaman.facade) is None:
             return None
-        reminder = self.spaman.facade.reminders_manager.get_reminder(
-            self._reminder_type
-        )
+        reminder = facade.reminders_manager.get_reminder(self._reminder_type)
         if reminder is None:
             return None
-        today = datetime.now(tz=UTC).date()
-        midnight = datetime(today.year, today.month, today.day, 0, 0, 0, 0, UTC)
-        return midnight + timedelta(reminder.days)
+        return dt_util.now().date() + timedelta(days=reminder.days)
 
     async def async_set_value(self, value: date) -> None:
         """Update the current value."""
-        if self.spaman.facade is None:
+        if (facade := self.spaman.facade) is None:
             return
-        today = datetime.now(tz=UTC).date()
-        delta = value - today
-        _LOGGER.debug("Set reminder delta to %d", delta.days)
-        await self.spaman.facade.reminders_manager.set_reminder(
-            self._reminder_type, delta.days
-        )
-
-    @property
-    def native_unit_of_measurement(self) -> str | None:
-        """Get native unit of measurement."""
-        return None
-
-    @property
-    def device_class(self) -> str:
-        """Get device class."""
-        return "timestamp"
-
-    @property
-    def icon(self) -> str:
-        """Get icon."""
-        return "mdi:reminder"
-
-    @staticmethod
-    def type_to_name(thetype: GeckoReminderType) -> str:  # noqa: PLR0911
-        """Convert type to name."""
-        # This should go via strings.json at some point
-        if thetype == GeckoReminderType.RINSE_FILTER:
-            return "Rinse filter"
-        if thetype == GeckoReminderType.CLEAN_FILTER:
-            return "Clean filter"
-        if thetype == GeckoReminderType.CHANGE_WATER:
-            return "Change water"
-        if thetype == GeckoReminderType.CHECK_SPA:
-            return "Check Spa"
-        if thetype == GeckoReminderType.CHANGE_OZONATOR:
-            return "Change Ozonator"
-        if thetype == GeckoReminderType.CHANGE_VISION_CARTRIDGE:
-            return "Change Vision cartridge"
-        return "Unknown"
-
-    def _on_change(self, _sender: Any, _old_value: Any, _new_value: Any) -> None:
-        """Notify HA of the change."""
-        if self.hass is not None:
-            self.async_schedule_update_ha_state(force_refresh=True)
+        days = (value - dt_util.now().date()).days
+        _LOGGER.debug("Set reminder delta to %d", days)
+        await facade.reminders_manager.set_reminder(self._reminder_type, days)

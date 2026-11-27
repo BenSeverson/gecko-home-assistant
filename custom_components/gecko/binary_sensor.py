@@ -1,39 +1,35 @@
 """Binary sensor platform for Gecko."""
 
-import logging
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import BINARY_SENSOR, DOMAIN
 from .entity import GeckoEntity
 
 if TYPE_CHECKING:
-    from .spa_manager import GeckoSpaManager
+    from homeassistant.core import HomeAssistant
+    from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-_LOGGER = logging.getLogger(__name__)
+    from .spa_manager import GeckoConfigEntry
+
+PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    _hass: HomeAssistant,
+    entry: GeckoConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up binary_sensor platform."""
-    spaman: GeckoSpaManager = hass.data[DOMAIN][entry.entry_id]
-    _LOGGER.debug("Load binary sensor platform")
-    if spaman.facade is not None:
-        async_add_entities(
-            [
-                GeckoBinarySensor(spaman, entry, sensor)
-                for sensor in spaman.facade.binary_sensors
-            ]
-        )
-        async_add_entities(
-            [GeckoBinarySensor(spaman, entry, spaman.facade.spa_in_use_sensor)]
-        )
-    spaman.platform_loaded(BINARY_SENSOR)
+    spaman = entry.runtime_data
+    if (facade := spaman.facade) is None:
+        return
+    async_add_entities(
+        GeckoBinarySensor(spaman, sensor)
+        for sensor in [*facade.binary_sensors, facade.spa_in_use_sensor]
+    )
 
 
 class GeckoBinarySensor(GeckoEntity, BinarySensorEntity):

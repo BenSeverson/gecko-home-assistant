@@ -1,33 +1,34 @@
 """Fan platform for Gecko."""
 
-from typing import TYPE_CHECKING, Any, cast
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 from geckolib import GeckoBlower, GeckoBubbleGenerator, GeckoPump, GeckoWaterfall
 from homeassistant.components.fan import FanEntity, FanEntityFeature
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN, FAN
 from .entity import GeckoEntity
 
 if TYPE_CHECKING:
-    from .spa_manager import GeckoSpaManager
+    from homeassistant.core import HomeAssistant
+    from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+
+    from .spa_manager import GeckoConfigEntry
+
+PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    _hass: HomeAssistant,
+    entry: GeckoConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up fan platform."""
-    spaman: GeckoSpaManager = hass.data[DOMAIN][entry.entry_id]
-    if spaman.facade is not None:
+    spaman = entry.runtime_data
+    if (facade := spaman.facade) is not None:
         async_add_entities(
-            [
-                GeckoFan(spaman, entry, pump)
-                for pump in list(spaman.facade.pumps + spaman.facade.blowers)
-            ]
+            GeckoFan(spaman, pump) for pump in [*facade.pumps, *facade.blowers]
         )
-    spaman.platform_loaded(FAN)
 
 
 class GeckoFan(GeckoEntity, FanEntity):
@@ -35,29 +36,28 @@ class GeckoFan(GeckoEntity, FanEntity):
 
     async def async_turn_on(
         self,
-        _speed: str | None = None,
         percentage: int | None = None,
         preset_mode: str | None = None,
         **_kwargs: Any,
     ) -> None:
-        """Turn on the switch."""
+        """Turn on the pump."""
         await self.pump.async_turn_on(percentage, preset_mode)
 
-    async def async_turn_off(self, **_kwarg: Any) -> None:
-        """Turn off the switch."""
+    async def async_turn_off(self, **_kwargs: Any) -> None:
+        """Turn off the pump."""
         await self.pump.async_turn_off()
 
     async def async_set_percentage(self, percentage: int) -> None:
-        """Set the speed percentage of the fan."""
+        """Set the speed percentage of the pump."""
         await self.pump.async_turn_on(percentage, None)
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
-        """Set the fan preset mode."""
+        """Set the pump preset mode."""
         await self.pump.async_set_mode(preset_mode)
 
     @property
     def is_on(self) -> bool:
-        """Get the fan on/off state."""
+        """Get the pump on/off state."""
         return self.pump.is_on
 
     @property
@@ -72,7 +72,7 @@ class GeckoFan(GeckoEntity, FanEntity):
 
     @property
     def icon(self) -> str:
-        """Return the icon of this switch."""
+        """Return the icon of this pump."""
         if isinstance(self._automation_entity, GeckoBlower):
             return "mdi:fan"
         if isinstance(self._automation_entity, GeckoWaterfall):
@@ -82,12 +82,12 @@ class GeckoFan(GeckoEntity, FanEntity):
         return "mdi:pump"
 
     @property
-    def preset_modes(self) -> list[str]:
+    def preset_modes(self) -> list[str] | None:
         """Get preset modes."""
         return self.pump.modes
 
     @property
-    def preset_mode(self) -> str:
+    def preset_mode(self) -> str | None:
         """Get current preset mode."""
         return self.pump.mode
 
@@ -101,4 +101,4 @@ class GeckoFan(GeckoEntity, FanEntity):
     @property
     def pump(self) -> GeckoPump:
         """Get the pump."""
-        return cast("GeckoPump", self._automation_entity)
+        return self._automation_entity

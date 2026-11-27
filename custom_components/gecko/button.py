@@ -1,117 +1,95 @@
 """Button platform for Gecko."""
 
-import datetime
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING
 
-from geckolib.automation.button import GeckoButton as GeckoLibButton
+from homeassistant.components import persistent_notification
 from homeassistant.components.button import ButtonEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.loader import async_get_loaded_integration
+from homeassistant.util import dt as dt_util
 
-from .const import BUTTON, DOMAIN
-from .const import VERSION as INTEGRATION_VERSION
+from .const import DOMAIN
 from .entity import GeckoEntity, GeckoEntityBase
-from .spa_manager import GeckoSpaManager
+
+if TYPE_CHECKING:
+    from geckolib import GeckoAutomationBase
+    from homeassistant.core import HomeAssistant
+    from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+
+    from .spa_manager import GeckoConfigEntry, GeckoSpaManager
 
 _LOGGER = logging.getLogger(__name__)
 
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    _hass: HomeAssistant,
+    entry: GeckoConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up sensor platform."""
-    spaman: GeckoSpaManager = hass.data[DOMAIN][entry.entry_id]
-    buttons = []
+    """Set up button platform."""
+    spaman = entry.runtime_data
+    buttons: list[ButtonEntity] = []
     # facade can be None while can_use_facade is still True: async_reset nulls
     # it immediately but the teardown event is processed asynchronously
-    if spaman.can_use_facade and spaman.facade is not None:
-        buttons.append(GeckoSnapshotButton(entry, spaman))
-        buttons.extend(
-            [
-                GeckoKeypadButton(entry, spaman, button)
-                for button in spaman.facade.keypad.buttons
-            ]
-        )
+    if spaman.can_use_facade and (facade := spaman.facade) is not None:
+        buttons.append(GeckoSnapshotButton(spaman))
+        buttons.extend(GeckoButton(spaman, button) for button in facade.keypad.buttons)
     if spaman.reconnect_button is not None:
-        buttons.append(GeckoReconnectButton(entry, spaman))
+        buttons.append(
+            GeckoButton(
+                spaman,
+                spaman.reconnect_button,
+                EntityCategory.DIAGNOSTIC,
+                "mdi:connection",
+            )
+        )
     if spaman.resync_button is not None:
-        buttons.append(GeckoResyncButton(entry, spaman))
+        # Re-reads the spa state without reconnecting
+        buttons.append(
+            GeckoButton(
+                spaman, spaman.resync_button, EntityCategory.DIAGNOSTIC, "mdi:refresh"
+            )
+        )
     async_add_entities(buttons)
-    spaman.platform_loaded(BUTTON)
 
 
 class GeckoButton(GeckoEntity, ButtonEntity):
     """Gecko button class."""
 
-
-class GeckoKeypadButton(GeckoButton):
-    """Gecko keypad button."""
-
     def __init__(
-        self, config_entry: ConfigEntry, spaman: GeckoSpaManager, button: GeckoLibButton
+        self,
+        spaman: GeckoSpaManager,
+        button: GeckoAutomationBase,
+        entity_category: EntityCategory | None = None,
+        icon: str | None = None,
     ) -> None:
-        """Initialize the keypad button."""
-        super().__init__(spaman, config_entry, button)
-        self._button: GeckoLibButton = button
-
-    async def async_press(self) -> None:
-        """Press the button asynchronously."""
-        await self._button.async_press()
-
-
-class GeckoReconnectButton(GeckoButton):
-    """Gecko Reconnect button class."""
-
-    def __init__(self, config_entry: ConfigEntry, spaman: GeckoSpaManager) -> None:
-        """Initialize the button class."""
-        super().__init__(
-            spaman, config_entry, spaman.reconnect_button, EntityCategory.DIAGNOSTIC
-        )
+        """Initialize the button."""
+        super().__init__(spaman, button, entity_category)
+        self._attr_icon = icon
 
     async def async_press(self) -> None:
         """Press the button asynchronously."""
         await self._automation_entity.async_press()
-
-    @property
-    def icon(self) -> str:
-        """Get the icon for this."""
-        return "mdi:connection"
-
-
-class GeckoResyncButton(GeckoButton):
-    """Gecko Resync button class - re-reads spa state without reconnecting."""
-
-    def __init__(self, config_entry: ConfigEntry, spaman: GeckoSpaManager) -> None:
-        """Initialize the button class."""
-        super().__init__(
-            spaman, config_entry, spaman.resync_button, EntityCategory.DIAGNOSTIC
-        )
-
-    async def async_press(self) -> None:
-        """Press the button asynchronously."""
-        await self._automation_entity.async_press()
-
-    @property
-    def icon(self) -> str:
-        """Get the icon for this."""
-        return "mdi:refresh"
 
 
 class GeckoSnapshotButton(GeckoEntityBase, ButtonEntity):
     """Gecko Snapshot button class."""
 
-    def __init__(self, config_entry: ConfigEntry, spaman: GeckoSpaManager) -> None:
+    _attr_icon = "mdi:magnify-scan"
+
+    def __init__(self, spaman: GeckoSpaManager) -> None:
         """Initialize the button class."""
         super().__init__(
             spaman,
-            config_entry,
             f"{spaman.unique_id}-SNAPSHOT",
             "Snapshot",
-            spaman.facade.name,
+            EntityCategory.DIAGNOSTIC,
         )
-        self._entity_category = EntityCategory.DIAGNOSTIC
 
     async def async_press(self) -> None:
         """Press the button asynchronously."""
@@ -119,30 +97,21 @@ class GeckoSnapshotButton(GeckoEntityBase, ButtonEntity):
         if facade is None:
             return
         data = facade.spa.get_snapshot_data()
-        data.update(
-            {
-                "Integration Version": INTEGRATION_VERSION,
-            }
+        data["Integration Version"] = str(
+            async_get_loaded_integration(self.hass, DOMAIN).version
         )
-        dump = f"SNAPSHOT ========{data}========"
-        _LOGGER.info(dump)
-
-        persistent_body = (
-            f"A snapshot of your Gecko system was taken at {datetime.datetime.now().astimezone().isoformat()}\n"  # noqa: E501
-            f"<details>"
-            f"<summary>Click to expand</summary>\n\n"
-            f"```{data}```"
-            f"</details>"
-        )
+        _LOGGER.info("SNAPSHOT ========%s========", data)
 
         # Make a persistent notification so it's easy to access
-        await self.hass.services.async_call(
-            "notify",
-            "persistent_notification",
-            service_data={"message": persistent_body, "title": "Gecko Snapshot"},
+        persistent_notification.async_create(
+            self.hass,
+            (
+                "A snapshot of your Gecko system was taken at "
+                f"{dt_util.now().isoformat()}\n"
+                "<details>"
+                "<summary>Click to expand</summary>\n\n"
+                f"```{data}```"
+                "</details>"
+            ),
+            title="Gecko Snapshot",
         )
-
-    @property
-    def icon(self) -> str:
-        """Get the icon for this."""
-        return "mdi:magnify-scan"

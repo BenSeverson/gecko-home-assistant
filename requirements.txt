@@ -1,4 +1,8 @@
-colorlog==6.10.1
-homeassistant==2026.7.4
-pip>=21.3.1
-ruff==0.14.14
+# Development and test requirements. The integration's runtime requirements
+# are in custom_components/gecko/manifest.json.
+colorlog==6.12.0
+geckolib==1.0.16
+mypy==2.4.1
+# This pins the version of Home Assistant that the tests run against
+pytest-homeassistant-custom-component==0.13.375
+ruff==0.17.6
